@@ -1,5 +1,5 @@
 # Ubuntu is required by playwright
-FROM ubuntu:latest AS base
+FROM public.ecr.aws/ubuntu/ubuntu:latest AS base
 
 ARG GITHUB_BUILD=false \
     UV_CACHE_DIR=/var/cache/uv \
