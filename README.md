@@ -1,79 +1,173 @@
-# Byparr
+# Byparr Fork - Raw Response Body Fix 🔧
 
-Built with [camoufox](https://camoufox.com/) and [FastAPI](https://fastapi.tiangolo.com), this project aims to mimic [FlareSolverr's](https://github.com/FlareSolverr/FlareSolverr) API and functionality of providing you with http cookies and headers for websites protected with anti-bot protections.
+> **⚠️ FORKED VERSION** - This is a modified version of [ThePhaseless/Byparr](https://github.com/ThePhaseless/Byparr) with a critical fix for JSON endpoint compatibility. See [original README](README.original.md) for upstream documentation.
 
-> [!IMPORTANT]
-> This software does not **guarantee** (only greatly increases the chance) that any challenge will be bypassed. While this tool passes the initial browser check, Cloudflare and other captcha providers likely require valid network traffic originating from the user’s public IP address to mark a connection as legitimate. If any website does not pass the challenge, please run troubleshooting steps and check if other websites work before you create an GitHub issue.
+---
 
-> [!IMPORTANT]
-> Support for NAS devices (like Synology) is minimal. Please report issues, but do not expect it to be fixed quickly. The only ARM device I have is a free Ampere Oracle VM, so I can only test ARM support on that. See [#22](https://github.com/ThePhaseless/Byparr/issues/22) and [#3](https://github.com/ThePhaseless/Byparr/issues/3)
+## 🐛 Why This Fork Exists
 
-> [!NOTE]
-> Thanks to FastAPI implementation, now you can also see the API documentation at `/docs` or `/` (redirect to `/docs`) endpoints.
+The original byparr returns **browser-rendered HTML** in the `solution.response` field instead of **raw HTTP response bodies**. This breaks integration with applications like Prowlarr that expect raw JSON responses.
 
-## Troubleshooting
+### The Problem
 
-### Docker
-
-1. Clone repo to the host that has issues with Byparr.
-2. Run `docker build --target test .`
-3. Depending of the build success:
-   1. If run successfully, try updating container or if already on newest stable release create an issue for creating new release with new dependencies
-   2. If build fails, try troubleshooting on another host/using other method
-
-### Local
-
-1. Download [uv](https://docs.astral.sh/uv/getting-started/installation/)
-2. Download dependencies using `uv sync --group test`
-3. Run tests with `uv run pytest --retries 3` (You can add `-n auto` for parallelization)
-4. If you see any `F` character in terminal, that means test failed even after retries.
-5. Depending of the test success:
-   1. If run successfully, try updating container or if already on newest stable release create an issue for creating new release with new dependencies
-   2. If test fails, try troubleshooting on another host/using other method
-
-## Options
-
-| Environment Variable | Default   | Description                                                                                                                                                       |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HOST`               | `0.0.0.0` | Host address to bind the server to. Use `0.0.0.0` to bind to all IPv4 interfaces, `::` for all IPv6 interfaces, or `127.0.0.1`/`localhost` for local access only. |
-| `PORT`               | `8191`    | Port to bind the server to.                                                                                                                                       |
-| `PROXY_SERVER`       | None      | Proxy to use in format: `protocol://host:port`.                                                                                                                   |
-| `PROXY_USERNAME`     | None      | Username for proxy authentication.                                                                                                                                |
-| `PROXY_PASSWORD`     | None      | Password for proxy authentication.                                                                                                                                |
-
-## Proxy Recommendation
-
-Recently I've partnered with a _new in town_ proxy service - ProxyBase - to offer affordable proxy services that seems to work seamlessly with Byparr! Using my affiliate code `byparr` (case sensitive!) when signing up will not only get you access to their cost-effective (**$0.69/GB with occasional promotions** _at the time of writing_) proxy network but will also help support the continued development of this project. ProxyBase's proxies can significantly improve your success rate when bypassing anti-bot challenges. [Check out ProxyBase](https://client.proxybase.org/signup?ref=byparr) and enhance your Byparr experience!
-
-## Tags
-
-- `v*.*.*`/`latest` - Releases considered stable
-- `main` - Latest release from main branch (untested)
-- `pr-{number}` - Pull request images for testing (automatically cleaned up when PR closes)
-
-## Usage
-
-### Docker Compose
-
-See `compose.yaml`
-
-### Docker
-
-```bash
-docker run -p 8191:8191 ghcr.io/thephaseless/byparr:latest
+**Original byparr response for JSON endpoint:**
+```json
+{
+  "solution": {
+    "response": "<html><body><pre>[{\"id\":81964344,...}]</pre></body></html>"
+  }
+}
 ```
 
-### Local
-
-```bash
-uv sync && uv run main.py
+**Expected response (FlareSolverr compatible):**
+```json
+{
+  "solution": {
+    "response": "[{\"id\":81964344,...}]"
+  }
+}
 ```
 
-## Need help with / TODO
+## ✅ The Fix
 
-- [x] Slimming container (only ~1.11 GB now!)
-- [x] Add more anti-bot challenges
-- [x] Add doc strings
-- [x] Implement versioning
-- [x] Proxy support
-- [x] Add more architectures support
+Modified [src/endpoints.py](src/endpoints.py) to capture raw HTTP response body using Playwright's `Response.text()` method instead of `page.content()`.
+
+**Key Changes:**
+- Uses `page_request.text()` to get raw HTTP response body
+- Falls back to `page.content()` if needed (backward compatible)
+- Maintains FlareSolverr API compatibility
+
+**See [FIX-DOCUMENTATION.md](FIX-DOCUMENTATION.md) for detailed explanation.**
+
+---
+
+## 📋 Quick Start
+
+### 1. Clone This Repository
+```bash
+git clone https://github.com/YOUR_USERNAME/byparr-fork.git
+cd byparr-fork
+```
+
+### 2. Build Docker Image
+```bash
+docker build -t byparr-fixed:latest .
+```
+
+### 3. Run Container
+```bash
+docker run -d \
+  --name byparr-fixed \
+  -p 8191:8191 \
+  -e LOG_LEVEL=DEBUG \
+  byparr-fixed:latest
+```
+
+### 4. Test the Fix
+```bash
+curl -X POST http://localhost:8191/v1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cmd": "request.get",
+    "url": "https://apibay.org/precompiled/data_top100_recent.json",
+    "maxTimeout": 60000
+  }'
+```
+
+You should now see **raw JSON** in `solution.response`, not HTML-wrapped JSON! ✨
+
+---
+
+## 🚀 Deployment Scripts
+
+### PowerShell (Windows)
+```powershell
+.\deploy.ps1                 # Build on server
+.\deploy.ps1 -BuildLocal     # Build locally and push to registry
+```
+
+### Bash (Linux/Mac)
+```bash
+chmod +x deploy.sh
+./deploy.sh                  # Follow prompts
+```
+
+### Manual Deployment
+
+**Update your docker-compose.yml:**
+```yaml
+byparr:
+  # image: ghcr.io/thephaseless/byparr:latest  # OLD
+  image: YOUR_REGISTRY/byparr-fixed:latest      # NEW
+  # ... rest of config unchanged
+```
+
+**Rebuild and restart:**
+```bash
+docker-compose up -d --force-recreate byparr
+```
+
+---
+
+## 🧪 Testing with Prowlarr
+
+1. Configure Prowlarr to use byparr at `http://byparr.internal:8191`
+2. Test The Pirate Bay indexer (or any CloudFlare-protected indexer)
+3. ✅ Verify successful searches without "CloudFlare Protection" errors
+
+**Check logs:**
+```bash
+docker logs -f byparr
+docker logs -f prowlarr
+```
+
+---
+
+## 📖 Documentation
+
+| File | Description |
+|------|-------------|
+| **[FIX-DOCUMENTATION.md](FIX-DOCUMENTATION.md)** | Detailed problem analysis, fix explanation, testing guide |
+| **[deploy.ps1](deploy.ps1)** | PowerShell deployment script for Windows |
+| **[deploy.sh](deploy.sh)** | Bash deployment script for Linux/Mac |
+| **[README.original.md](README.original.md)** | Original byparr README (renamed) |
+
+---
+
+## 🔗 Related Issues
+
+- **Original Issue:** [ThePhaseless/Byparr#303](https://github.com/ThePhaseless/Byparr/issues/303)
+- **Root Cause Analysis:** [Issue Comment](https://github.com/ThePhaseless/Byparr/issues/303#issuecomment-3818154929)
+
+---
+
+## 🤝 Contributing Back to Original Project
+
+Want to help get this fix merged upstream?
+
+1. Fork [ThePhaseless/Byparr](https://github.com/ThePhaseless/Byparr)
+2. Create branch: `git checkout -b fix/raw-response-body`
+3. Apply changes from [src/endpoints.py](src/endpoints.py)
+4. Create Pull Request referencing issue #303
+
+---
+
+## 📄 License
+
+This fork maintains the same license as the original byparr project.
+
+---
+
+## 🙏 Credits
+
+- **Original Project:** [ThePhaseless/Byparr](https://github.com/ThePhaseless/Byparr)
+- **Fix Developed By:** @paulredmond79
+- **Issue Reported By:** Multiple users (see issue #303)
+
+---
+
+**⚠️ Important:** This is a temporary fork until the fix is merged into the original byparr project. Consider switching back to the official image once the fix is released upstream.
+
+---
+
+For original byparr documentation, see [README.original.md](README.original.md).

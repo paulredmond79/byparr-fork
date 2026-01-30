@@ -92,6 +92,20 @@ async def read_item(request: LinkRequest, dep: CamoufoxDep) -> LinkResponse:
 
     cookies = await dep.context.cookies()
 
+    # Capture raw HTTP response body instead of rendered HTML
+    # This fixes the issue where page.content() returns browser-rendered HTML
+    # including wrapper tags like <html><body><pre>JSON</pre></body></html>
+    # For FlareSolverr compatibility, we need the raw response body
+    response_body = ""
+    if page_request:
+        try:
+            response_body = await page_request.text()
+        except Exception as e:
+            logger.warning(f"Failed to get response text, falling back to page content: {e}")
+            response_body = await dep.page.content()
+    else:
+        response_body = await dep.page.content()
+
     return LinkResponse(
         message="Success",
         solution=Solution(
@@ -100,7 +114,7 @@ async def read_item(request: LinkRequest, dep: CamoufoxDep) -> LinkResponse:
             status=status,
             cookies=cookies,
             headers=page_request.headers if page_request else {},
-            response=await dep.page.content(),
+            response=response_body,
         ),
         start_timestamp=start_time,
     )
