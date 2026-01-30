@@ -1,8 +1,11 @@
 import time
 import warnings
 from asyncio import wait_for
+from email.utils import parsedate_to_datetime
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
@@ -23,6 +26,57 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 router = APIRouter()
 
 CamoufoxDep = Annotated[CamoufoxDepClass, Depends(get_camoufox)]
+
+
+def _parse_set_cookie(set_cookie_header: str | None, fallback_url: str) -> list[dict]:
+    if not set_cookie_header:
+        return []
+
+    cookie_jar: SimpleCookie[str] = SimpleCookie()
+    try:
+        cookie_jar.load(set_cookie_header)
+    except Exception:
+        for part in [c.strip() for c in set_cookie_header.split("\n") if c.strip()]:
+            try:
+                cookie_jar.load(part)
+            except Exception:
+                continue
+
+    parsed_url = urlparse(fallback_url)
+    fallback_domain = parsed_url.hostname or ""
+
+    parsed_cookies: list[dict] = []
+    for name, morsel in cookie_jar.items():
+        domain = morsel["domain"] or fallback_domain
+        path = morsel["path"] or "/"
+        expires = -1
+        if morsel["expires"]:
+            try:
+                expires_dt = parsedate_to_datetime(morsel["expires"])
+                expires = int(expires_dt.timestamp())
+            except Exception:
+                expires = -1
+
+        http_only = bool(morsel["httponly"]) if morsel["httponly"] else False
+        secure = bool(morsel["secure"]) if morsel["secure"] else False
+        same_site = morsel["samesite"] or None
+
+        parsed_cookies.append(
+            {
+                "name": name,
+                "value": morsel.value,
+                "domain": domain,
+                "path": path,
+                "expires": expires,
+                "httpOnly": http_only,
+                "secure": secure,
+                "sameSite": same_site,
+                "size": len(name) + len(morsel.value),
+                "session": expires == -1,
+            }
+        )
+
+    return parsed_cookies
 
 
 @router.get("/", include_in_schema=False)
@@ -91,6 +145,24 @@ async def read_item(request: LinkRequest, dep: CamoufoxDep) -> LinkResponse:
         ) from e
 
     cookies = await dep.context.cookies()
+    set_cookie_header = None
+    if page_request:
+        set_cookie_header = page_request.headers.get("set-cookie")
+
+    parsed_header_cookies = _parse_set_cookie(set_cookie_header, dep.page.url)
+    if parsed_header_cookies:
+        cookie_index = {
+            (cookie.get("name"), cookie.get("domain"), cookie.get("path")): cookie
+            for cookie in cookies
+        }
+        for header_cookie in parsed_header_cookies:
+            key = (
+                header_cookie.get("name"),
+                header_cookie.get("domain"),
+                header_cookie.get("path"),
+            )
+            cookie_index[key] = header_cookie
+        cookies = list(cookie_index.values())
 
     # Capture raw HTTP response body instead of rendered HTML
     # This fixes the issue where page.content() returns browser-rendered HTML
